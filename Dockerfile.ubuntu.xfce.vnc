@@ -1,9 +1,47 @@
 # This Dockerfile is used to build an headles vnc image based on Ubuntu
+# This file is adapted from an original version of Simon Hofmann, 
+# https://github.com/ConSol/docker-headless-vnc-container
+# and another file by Henry Huang, 
+# https://github.com/henry2423/docker-ros-vnc
 
-FROM ubuntu:16.04
+FROM ubuntu:18.04
 
-MAINTAINER Simon Hofmann "simon.hofmann@consol.de"
-ENV REFRESHED_AT 2018-10-29
+MAINTAINER Thao Dang "thao.dang@hs-esslingen.de"
+ENV REFRESHED_AT 2020-03-22
+
+# Install sudo
+RUN apt-get update && \
+    apt-get install -y sudo \
+    xterm \
+    curl \
+    gnupg
+
+# Configure user
+ARG user=ros
+ARG passwd=ros
+ARG uid=1000
+ARG gid=1000
+ENV USER=$user
+ENV PASSWD=$passwd
+ENV UID=$uid
+ENV GID=$gid
+RUN groupadd $USER && \
+    useradd --create-home --no-log-init -g $USER $USER && \
+    usermod -aG sudo $USER && \
+    echo "$PASSWD:$PASSWD" | chpasswd && \
+    chsh -s /bin/bash $USER && \
+    # Replace 1000 with your user/group id
+    usermod  --uid $UID $USER && \
+    groupmod --gid $GID $USER
+
+### Install VScode
+RUN curl https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor > packages.microsoft.gpg && \
+    sudo install -o root -g root -m 644 packages.microsoft.gpg /usr/share/keyrings/ && \
+    sudo sh -c 'echo "deb [arch=amd64 signed-by=/usr/share/keyrings/packages.microsoft.gpg] https://packages.microsoft.com/repos/vscode stable main" > /etc/apt/sources.list.d/vscode.list'
+
+RUN sudo apt-get install -y apt-transport-https && \
+    sudo apt-get update && \
+    sudo apt-get install -y code
 
 LABEL io.k8s.description="Headless VNC Container with Xfce window manager, firefox and chromium" \
       io.k8s.display-name="Headless VNC Container based on Ubuntu" \
@@ -20,14 +58,14 @@ ENV DISPLAY=:1 \
 EXPOSE $VNC_PORT $NO_VNC_PORT
 
 ### Envrionment config
-ENV HOME=/headless \
+ENV HOME=/home/$USER \
     TERM=xterm \
     STARTUPDIR=/dockerstartup \
-    INST_SCRIPTS=/headless/install \
-    NO_VNC_HOME=/headless/noVNC \
+    INST_SCRIPTS=/home/$USER/install \
+    NO_VNC_HOME=/home/$USER/noVNC \
     DEBIAN_FRONTEND=noninteractive \
     VNC_COL_DEPTH=24 \
-    VNC_RESOLUTION=1280x1024 \
+    VNC_RESOLUTION=1920x1080 \
     VNC_PW=vncpassword \
     VNC_VIEW_ONLY=false
 WORKDIR $HOME
@@ -61,7 +99,30 @@ RUN $INST_SCRIPTS/libnss_wrapper.sh
 ADD ./src/common/scripts $STARTUPDIR
 RUN $INST_SCRIPTS/set_user_permission.sh $STARTUPDIR $HOME
 
-USER 1000
+### ROS and Gazebo Installation
+# Install other utilities
+RUN apt-get update && \
+    apt-get install -y vim \
+    tmux \
+    git
+
+# Install ROS
+RUN sh -c 'echo "deb http://packages.ros.org/ros/ubuntu $(lsb_release -sc) main" > /etc/apt/sources.list.d/ros-latest.list' && \
+    apt-key adv --keyserver 'hkp://keyserver.ubuntu.com:80' --recv-key C1CF6E31E6BADE8868B172B4F42ED6FBAB17C654 && \
+    apt-get update && \
+    apt-get install -y ros-melodic-desktop-full && \
+    apt-get install -y ros-melodic-husky-simulator && \
+    rosdep init
+
+### Switch user (remember to switch back to root user to install additional software)
+USER $USER
+
+# Setup ROS
+RUN rosdep fix-permissions && rosdep update
+RUN echo "source /opt/ros/melodic/setup.bash" >> ~/.bashrc
+RUN /bin/bash -c "source ~/.bashrc"
+
+
 
 ENTRYPOINT ["/dockerstartup/vnc_startup.sh"]
 CMD ["--wait"]
