@@ -4,7 +4,7 @@
 # and another file by Henry Huang, 
 # https://github.com/henry2423/docker-ros-vnc
 
-FROM ubuntu:18.04
+FROM nvidia/cuda:10.1-cudnn7-devel-ubuntu18.04
 
 MAINTAINER Thao Dang "thao.dang@hs-esslingen.de"
 ENV REFRESHED_AT 2020-03-22
